@@ -1,0 +1,9 @@
+
+#Ignorar datos y predicciones
+*.csv
+data/
+
+#Ignorar modelos entrenados
+train_example/
+*.pt
+__pycache__/
