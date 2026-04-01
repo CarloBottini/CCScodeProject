@@ -1,40 +1,35 @@
-# Importamos la herramienta de grafos de chemprop y rdkit (la librería química base)
-from chemprop.featurizers import SimpleMoleculeMolGraphFeaturizer
-from rdkit import Chem
+# Importamos la red Neuronal desde el módulo 'nn' (Neural Networks) de Chemprop
+from chemprop.nn import BondMessagePassing, MeanAggregation, RegressionFFN
+from chemprop.models import MPNN
 
-print("--- 1. CREANDO LA MOLÉCULA (RDKit) ---")
-# Usamos el Etanol como ejemplo (2 carbonos, 1 oxígeno)
-smiles = "CCO"
-# RDKit lee el texto y crea un objeto químico real en memoria
-molecula = Chem.MolFromSmiles(smiles)
-print(f"Molécula {smiles} cargada en RDKit correctamente.")
+print("--- 1. FABRICANDO LAS PIEZAS DEL CEREBRO ---")
 
-print("\n--- 2. INICIANDO EL FEATURIZER (EL TRADUCTOR) ---")
-# Instanciamos la clase que junta los Atom y Bond Featurizers por defecto
-traductor = SimpleMoleculeMolGraphFeaturizer()
+# PIEZA 1: Message Passing (Los "Carteros" químicos)
+# Su trabajo es hacer que los átomos se pasen información a través de los enlaces.
+mp = BondMessagePassing()
+print("Pieza 1 (Message Passing) creada.")
 
-# Pasamos la molécula por el traductor para obtener el Grafo Molecular (MolGraph)
-grafo_molecular = traductor(molecula)
-print("¡Traducción a grafo completada!")
+# PIEZA 2: Aggregation (El "Resumen Ejecutivo")
+# Usamos 'MeanAggregation' para que haga la Media Matemática de todos los átomos
+# y colapse la molécula en un solo vector.
+agg = MeanAggregation()
+print("Pieza 2 (Aggregation) creada.")
 
-print("\n--- 3. INSPECCIONANDO LAS MATRICES ---")
-# grafo_molecular.V es la matriz de Vértices (Átomos)
-# grafo_molecular.E es la matriz de Aristas (Enlaces)
+# PIEZA 3: Predictor 
+# Usamos 'RegressionFFN' (Feed-Forward Network para Regresión)
+# Usamos Regresión porque el CCS es un número continuo (ej: 125.4), no una categoría (ej: "Perro" o "Gato").
+ffn = RegressionFFN()
+print("Pieza 3 (Predictor FFN) creada.")
 
-# .shape nos dice las dimensiones de la matriz: (Filas, Columnas)
-# Filas = Número de átomos/enlaces. Columnas = Número de propiedades químicas extraídas.
-print(f"Dimensiones de la matriz de Átomos (V): {grafo_molecular.V.shape}")
-print(f"Dimensiones de la matriz de Enlaces (E): {grafo_molecular.E.shape}")
+print("\n--- 2. ENSAMBLANDO EL MODELO COMPLETO (MPNN) ---")
+# MPNN: junta las 3 piezas en el orden correcto
+modelo_ccs = MPNN(mp, agg, ffn)
 
-print("\n--- VISTAZO A LOS DATOS PUROS (TODA LA MOLÉCULA) ---")
-# Al imprimir grafo_molecular.V entero (sin el [0]), la consola nos mostrará 
-# 3 filas de números. Cada fila corresponde a un átomo de la molécula "CCO".
-print(">>> MATRIZ DE ÁTOMOS (V) COMPLETA:")
-print(grafo_molecular.V)
-
-# También imprimimos la matriz de enlaces para ver las 4 direcciones (C-C, C-C, C-O, O-C)
-print("\n>>> MATRIZ DE ENLACES (E) COMPLETA:")
-print(grafo_molecular.E)
+print("¡Cerebro ensamblado con éxito! Aquí tienes su radiografía interna:")
 print("==================================================")
+# Al imprimir el modelo, la librería PyTorch nos muestra todas sus capas matemáticas ocultas
+print(modelo_ccs)
+print("==================================================")
+
 
 
