@@ -3,52 +3,60 @@
 from chemprop.data import MoleculeDatapoint, MoleculeDataset, build_dataloader
 from chemprop.nn import BondMessagePassing, SumAggregation, RegressionFFN
 from chemprop.models import MPNN
+# NUEVO: Importamos MAE y RMSE con sus nombres actualizados de la v2
+from chemprop.nn.metrics import MAE, RMSE
 import numpy as np
-# NUEVO: Importamos PyTorch para tocar activaciones y loss functions a bajo nivel
-import torch 
-import torch.nn as nn 
+import torch
+import os
 
-print("--- 1. PREPARANDO DATOS ---")
-mol1 = MoleculeDatapoint.from_smi("C", y=np.array([10.0]))    
-mol2 = MoleculeDatapoint.from_smi("CC", y=np.array([20.0]))   
-mol3 = MoleculeDatapoint.from_smi("CCC", y=np.array([30.0]))  
-mol4 = MoleculeDatapoint.from_smi("CCCC", y=np.array([40.0])) 
+print("--- 1. PREPARANDO DATOS Y MODELO ---")
+mol1 = MoleculeDatapoint.from_smi("C", y=np.array([10.0]))
+mol2 = MoleculeDatapoint.from_smi("CC", y=np.array([20.0]))
+mi_dataset = MoleculeDataset([mol1, mol2])
+paquete = next(iter(build_dataloader(mi_dataset, batch_size=2, shuffle=False)))
 
-mi_dataset = MoleculeDataset([mol1, mol2, mol3, mol4])
-mi_dataloader = build_dataloader(mi_dataset, batch_size=4, shuffle=False)
-paquete = next(iter(mi_dataloader))
+# Construimos el cerebro
+modelo = MPNN(BondMessagePassing(), SumAggregation(), RegressionFFN())
+modelo.eval() # modo prediccion
 
-print("--- 2. CONSTRUYENDO EL CEREBRO ---")
-mp = BondMessagePassing()
-agg = SumAggregation()
+print("\n--- 2. CALCULANDO MÉTRICAS OFICIALES ---")
+predicciones = modelo(paquete.bmg)
+valores_reales = paquete.Y
 
-#Activation: le decimos al Predictor que use LeakyReLU en vez del ReLU por defecto
-funcion_activacion = nn.LeakyReLU()
-ffn = RegressionFFN(activation=funcion_activacion)
+# Usamos las clases de métricas de Chemprop
+metrica_mae = MAE()
+metrica_rmse = RMSE()
 
-modelo_ccs = MPNN(mp, agg, ffn)
-print("Cerebro ensamblado (Usando activación LeakyReLU).")
+# Calculamos (le pasamos predicción y realidad)
+valor_mae = metrica_mae(predicciones, valores_reales)
+valor_rmse = metrica_rmse(predicciones, valores_reales)
 
-print("\n--- 3. PREDICCIÓN ---")
-modelo_ccs.eval()
-predicciones = modelo_ccs(paquete.bmg)
-valores_reales = paquete.Y # Guardamos los valores reales en una variable
+print(f"Resultado MAE: {valor_mae.item():.4f}")
+print(f"Resultado RMSE: {valor_rmse.item():.4f}")
 
-print(f"Valores REALES:    {valores_reales.flatten().tolist()}")
-print(f"Valores PREDICHOS: {predicciones.flatten().tolist()}")
+print("\n--- 3. GUARDANDO EL MODELO EN EL DISCO ---")
+# Definimos un nombre de archivo para guardar
+PATH_GUARDADO = "modelo_ccs_prueba.pt"
 
-print("\n--- 4. EL PROFESOR CORRIGIENDO (Loss Functions) ---")
-# NUEVO TEMA (LOSS FUNCTIONS): Evaluamos lo mal que lo ha hecho el modelo sin entrenar
+# Guardamos el "state_dict" (los pesos de las neuronas) en el archivo
+torch.save(modelo.state_dict(), PATH_GUARDADO)
+print(f"Cerebro guardado con éxito como: {PATH_GUARDADO}")
 
-# Profesor 1: Error Absoluto (MAE - L1Loss en PyTorch)
-profesor_mae = nn.L1Loss()
-nota_mae = profesor_mae(predicciones, valores_reales)
+print("\n--- 4. CARGANDO EL MODELO (PRUEBA DE MEMORIA) ---")
+# Creamos un cerebro nuevo, vacío y sin conocimientos
+nuevo_modelo = MPNN(BondMessagePassing(), SumAggregation(), RegressionFFN())
 
-# Profesor 2: Error Cuadrático (MSE - MSELoss en PyTorch)
-profesor_mse = nn.MSELoss()
-nota_mse = profesor_mse(predicciones, valores_reales)
+# Le "inyectamos" los conocimientos del archivo que acabamos de guardar
+nuevo_modelo.load_state_dict(torch.load(PATH_GUARDADO, weights_only=True))
+nuevo_modelo.eval()
 
-print(f"Nota MAE (Fallo absoluto medio): {nota_mae.item():.2f}")
-print(f"Nota MSE (Fallo elevado al cuadrado): {nota_mse.item():.2f}")
-print("==================================")
+# Comprobamos que el nuevo modelo predice exactamente lo mismo que el original
+nueva_prediccion = nuevo_modelo(paquete.bmg)
+print(f"Predicción original: {predicciones.flatten().tolist()[0]:.4f}")
+print(f"Predicción cargada:  {nueva_prediccion.flatten().tolist()[0]:.4f}")
+
+if torch.allclose(predicciones, nueva_prediccion):
+    print("¡ÉXITO! El modelo cargado tiene exactamente la misma memoria que el original.")
+
+
 
