@@ -1,62 +1,103 @@
+#Using extra  features and descriptors
+
+
 import torch
 import lightning.pytorch as pl
 import numpy as np
+from rdkit import Chem
+from rdkit.Chem import Descriptors
 from chemprop.data import MoleculeDatapoint, MoleculeDataset, build_dataloader, make_split_indices
 from chemprop.nn import BondMessagePassing, SumAggregation, RegressionFFN, UnscaleTransform
 from chemprop.models import MPNN
 
-print("--- 1. FASE DE ENTRENAMIENTO  ---")
-# Creamos nuestras 10 moléculas para que el modelo aprenda 
-datos_entrenamiento = [MoleculeDatapoint.from_smi("C" * i, y=np.array([i * 10.0])) for i in range(1, 11)]
-dataset_train = MoleculeDataset(datos_entrenamiento)
+print("--- 1. DATA PREPARATION (ADDING MACROSCOPIC FEATURES) ---")
+'''
+Instead of relying solely on the graph, 
+we will compute the exact Molecular Weight (MW) with RDKit and feed it directly 
+to the neural network as an "Extra Datapoint Descriptor" (x_d).
 
-# Escalamos (para que el modelo no colapse con numeros grandes)
-escalador = dataset_train.normalize_targets()
+'''
+
+datos = []
+for i in range(1, 11):
+    smi = "C" * i
+    y_val = i * 10.0
+    
+    #RDKit to build the molecule in memory
+    mol = Chem.MolFromSmiles(smi)
+    #Calculate the exact Molecular Weight (ex:Methane =16.04)
+    mw = Descriptors.MolWt(mol) #from rdkit
+    
+    #Extra features (x_d) must be passed as a 1D NumPy array of floats.
+    #If I had more features (like LogP or TPSA), I would append them to this list.
+    caracteristicas_extra = np.array([mw], dtype=np.float32)
+    
+    #Inject the x_d array into the Datapoint
+    datos.append(MoleculeDatapoint.from_smi(smi, y=np.array([y_val]), x_d=caracteristicas_extra))
+
+dataset_completo = MoleculeDataset(datos)
+#The return type of make_split_indices has changed in v2.1 - see help(make_split_indices)
+
+
+#Data Splitting
+indices_train, indices_val, _ = make_split_indices(dataset_completo, sizes=(0.8, 0.2, 0.0), seed=42)
+
+dataset_train = MoleculeDataset([datos[int(i)] for i in indices_train[0]]) #the problem of TypeError is solve here, with indices_train[0]
+dataset_val = MoleculeDataset([datos[int(i)] for i in indices_val[0]])
+
+#Scaling the targets
+escalador_y = dataset_train.normalize_targets()
+dataset_val.normalize_targets(escalador_y)
+
 loader_train = build_dataloader(dataset_train, batch_size=2, shuffle=True) 
+loader_val = build_dataloader(dataset_val, batch_size=2, shuffle=False)
 
-# Montamos el MPNN (nuestro cerebro)
+print("\n--- 2. BUILDING THE ENHANCED BRAIN ---")
 mp = BondMessagePassing()
 agg = SumAggregation()
-# Le acoplamos el desescalador a la salida para que nos dé el CCS en unidades reales (Å²)
-ffn = RegressionFFN(output_transform=UnscaleTransform.from_standard_scaler(escalador))
-modelo_ccs = MPNN(mp, agg, ffn)
 
-# Entrenamos rapidisimo a 10 epochs
-entrenador = pl.Trainer(max_epochs=10, enable_checkpointing=False, logger=False, enable_progress_bar=False)
-entrenador.fit(modelo_ccs, loader_train)
-print("Modelo entrenado y listo para el mundo real.")
+#The graph module (mp) outputs 300 neurons. 
+#My extra descriptor (x_d) adds 1 extra feature.
+#The network automatically concatenates them (300 + 1 = 301). 
+#Therefore, I MUST tell the Predictor FFN to expect 301 input neurons, otherwise it will crash.
+numero_de_features_extra = 1
+dimension_total = mp.output_dim + numero_de_features_extra
+
+transformacion_salida = UnscaleTransform.from_standard_scaler(escalador_y)
+
+#Predictor
+ffn = RegressionFFN(
+    input_dim=dimension_total, 
+    output_transform=transformacion_salida
+)
+
+#Assembling the MPNN
+modelo_mejorado = MPNN(mp, agg, ffn)
+print("Enhanced Brain assembled. Graph info + MW injected straight into the Predictor.")
+
+print("\n--- 3. TRAINING THE ENHANCED MODEL ---")
+entrenador = pl.Trainer(
+    max_epochs=10, 
+    enable_checkpointing=False, 
+    logger=False,
+    enable_progress_bar=False
+)
+
+print("Training.....")
+entrenador.fit(modelo_mejorado, loader_train, loader_val)
 
 
-print("\n--- 2. FASE DE PREDICCIÓN ---")
-# Supongamos que se pasan estas 3 moléculas nuevas.
-# No conozco su CCS y no hay 'y=...' por ninguna parte.
-smiles_nuevos = ["CCCCCCCCCCC", "CCCCCCCCCCCC", "CCCCCCCCCCCCC"] # 11, 12 y 13 carbonos
-
-# 1. Las convierto en Datapoints, pero esta vez a ciegas (sin 'y')
-datos_nuevos = []
-for smi in smiles_nuevos:
-    # Meto el SMILES
-    datos_nuevos.append(MoleculeDatapoint.from_smi(smi))
-
-# 2. Las empaqueto en un Dataset y luego en el Dataloader
-dataset_ciego = MoleculeDataset(datos_nuevos)
-# shuffle=False siempre en predicción para no perder el orden de los resultados y saber quién es quién
-loader_prediccion = build_dataloader(dataset_ciego, batch_size=3, shuffle=False)
-
-print("Analizando las nuevas moléculas en el laboratorio virtual")
-
-# En vez de usar .fit() (estudiar) o hacer un bucle manual, usamos .predict().
-# Esto coge el dataloader, lo pasa por la CPU de forma ultra optimizada,
-# aplica el desescalador automáticamente y te devuelve una lista de tensores.
-resultados_brutos = entrenador.predict(modelo_ccs, loader_prediccion)
-
-print("\n--- 3. RESULTADOS FINALES PARA EL INFORME ---")
-# 'resultados_brutos' es una lista de lotes (batches). Hay que aplanarla para leerla bien.
+print("\n--- 4. PREDICTING WITH EXTRA FEATURES ---")
+#Predicting on the validation set.
+# The .predict() function can handle the batches AND the x_d arrays internally.
+resultados_brutos = entrenador.predict(modelo_mejorado, loader_val)
 predicciones_finales = torch.cat(resultados_brutos, dim=0).flatten().tolist()
 
-# Imprimimos los resultados emparejados con su SMILES original
-for smi, ccs_predicho in zip(smiles_nuevos, predicciones_finales):
-    print(f"SMILES: {smi: <15} --> CCS Predicho: {ccs_predicho:.2f} Å²")
+#Taking the true values to compare
+paquete_examen = next(iter(loader_val))
+valores_reales_desescalados = escalador_y.inverse_transform(paquete_examen.Y).flatten().tolist()
 
-print("==================================================================")
-
+print("\n=== RESULTS WITH MOLECULAR WEIGHT INJECTED ===")
+for real, pred in zip(valores_reales_desescalados, predicciones_finales):
+    print(f"Real Target: {real:>6.2f} | Model Predicted: {pred:>6.2f}")
+print("==============================================")
