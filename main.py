@@ -1,81 +1,47 @@
-#Using extra  features and descriptors
-
-
 import torch
 import lightning.pytorch as pl
 import numpy as np
-from rdkit import Chem
-from rdkit.Chem import Descriptors
 from chemprop.data import MoleculeDatapoint, MoleculeDataset, build_dataloader, make_split_indices
-from chemprop.nn import BondMessagePassing, SumAggregation, RegressionFFN, UnscaleTransform
+
+
+# CHANGED: RegressionFFN for MveFFN (Mean-Variance Estimation)
+from chemprop.nn import BondMessagePassing, SumAggregation, MveFFN, UnscaleTransform
+
 from chemprop.models import MPNN
 
-print("--- 1. DATA PREPARATION (ADDING MACROSCOPIC FEATURES) ---")
-'''
-Instead of relying solely on the graph, 
-we will compute the exact Molecular Weight (MW) with RDKit and feed it directly 
-to the neural network as an "Extra Datapoint Descriptor" (x_d).
-
-'''
-
+print("--- 1. DATA PREPARATION (UNCERTAINTY) ---")
+#The model will tell how CONFIDENT it is.
 datos = []
 for i in range(1, 11):
-    smi = "C" * i
-    y_val = i * 10.0
-    
-    #RDKit to build the molecule in memory
-    mol = Chem.MolFromSmiles(smi)
-    #Calculate the exact Molecular Weight (ex:Methane =16.04)
-    mw = Descriptors.MolWt(mol) #from rdkit
-    
-    #Extra features (x_d) must be passed as a 1D NumPy array of floats.
-    #If I had more features (like LogP or TPSA), I would append them to this list.
-    caracteristicas_extra = np.array([mw], dtype=np.float32)
-    
-    #Inject the x_d array into the Datapoint
-    datos.append(MoleculeDatapoint.from_smi(smi, y=np.array([y_val]), x_d=caracteristicas_extra))
+    datos.append(MoleculeDatapoint.from_smi("C" * i, y=np.array([i * 10.0])))
 
 dataset_completo = MoleculeDataset(datos)
-#The return type of make_split_indices has changed in v2.1 - see help(make_split_indices)
-
-
-#Data Splitting
+#Data split
 indices_train, indices_val, _ = make_split_indices(dataset_completo, sizes=(0.8, 0.2, 0.0), seed=42)
 
-dataset_train = MoleculeDataset([datos[int(i)] for i in indices_train[0]]) #the problem of TypeError is solve here, with indices_train[0]
+dataset_train = MoleculeDataset([datos[int(i)] for i in indices_train[0]])
 dataset_val = MoleculeDataset([datos[int(i)] for i in indices_val[0]])
 
-#Scaling the targets
-escalador_y = dataset_train.normalize_targets()
-dataset_val.normalize_targets(escalador_y)
+escalador = dataset_train.normalize_targets()
+dataset_val.normalize_targets(escalador)
 
 loader_train = build_dataloader(dataset_train, batch_size=2, shuffle=True) 
 loader_val = build_dataloader(dataset_val, batch_size=2, shuffle=False)
 
-print("\n--- 2. BUILDING THE ENHANCED BRAIN ---")
+print("\n--- 2. BUILDING THE UNCERTAINTY BRAIN ---")
 mp = BondMessagePassing()
 agg = SumAggregation()
 
-#The graph module (mp) outputs 300 neurons. 
-#My extra descriptor (x_d) adds 1 extra feature.
-#The network automatically concatenates them (300 + 1 = 301). 
-#Therefore, I MUST tell the Predictor FFN to expect 301 input neurons, otherwise it will crash.
-numero_de_features_extra = 1
-dimension_total = mp.output_dim + numero_de_features_extra
+#MveFFN outputs a probability distribution.
+#It automatically changes the Loss Function to Negative Log Likelihood (NLL).
+#The UnscaleTransform will unscale BOTH the mean and the variance back to real units
+transformacion_salida = UnscaleTransform.from_standard_scaler(escalador)
+ffn = MveFFN(output_transform=transformacion_salida)
 
-transformacion_salida = UnscaleTransform.from_standard_scaler(escalador_y)
+modelo_incertidumbre = MPNN(mp, agg, ffn)
+print("Brain assembled. Equipped with uncertainty estimation capabilities.")
 
-#Predictor
-ffn = RegressionFFN(
-    input_dim=dimension_total, 
-    output_transform=transformacion_salida
-)
-
-#Assembling the MPNN
-modelo_mejorado = MPNN(mp, agg, ffn)
-print("Enhanced Brain assembled. Graph info + MW injected straight into the Predictor.")
-
-print("\n--- 3. TRAINING THE ENHANCED MODEL ---")
+print("\n--- 3. TRAINING WITH UNCERTAINTY ---")
 entrenador = pl.Trainer(
     max_epochs=10, 
     enable_checkpointing=False, 
@@ -83,21 +49,34 @@ entrenador = pl.Trainer(
     enable_progress_bar=False
 )
 
-print("Training.....")
-entrenador.fit(modelo_mejorado, loader_train, loader_val)
+print("Training the model to estimate its own errors.....")
+entrenador.fit(modelo_incertidumbre, loader_train, loader_val)
+
+print("\n--- 4. Test (PREDICTION ± UNCERTAINTY) ---")
+smiles_nuevos = ["CCCCCCCCCCC", "CCCCCCCCCCCC"]
+datos_nuevos = [MoleculeDatapoint.from_smi(s) for s in smiles_nuevos]
+dataset_ciego = MoleculeDataset(datos_nuevos)
+loader_pred = build_dataloader(dataset_ciego, batch_size=2, shuffle=False)
+
+#Predicting blindly
+resultados_brutos = entrenador.predict(modelo_incertidumbre, loader_pred)
+predicciones = torch.cat(resultados_brutos, dim=0)
+
+print("\n=== PREDICTIONS WITH CONFIDENCE INTERVALS ===")
+for i, smi in enumerate(smiles_nuevos):
+    #MveFFN returns the Mean (index 0) and the Variance (index 1)
+    valores = predicciones[i].flatten()
+    ccs_predicho = valores[0].item()
+    
+    #Variance is the square of the standard deviation (std^2).
+    varianza = valores[1].item()
+    
+    #Adding abs() to prevent math errors from float imprecision near zero.
+    desviacion_estandar = np.sqrt(abs(varianza)) 
+    
+    print(f"SMILES: {smi: <15} --> CCS: {ccs_predicho:.2f} ± {desviacion_estandar:.2f} Å2")
+print("=============================================")
 
 
-print("\n--- 4. PREDICTING WITH EXTRA FEATURES ---")
-#Predicting on the validation set.
-# The .predict() function can handle the batches AND the x_d arrays internally.
-resultados_brutos = entrenador.predict(modelo_mejorado, loader_val)
-predicciones_finales = torch.cat(resultados_brutos, dim=0).flatten().tolist()
 
-#Taking the true values to compare
-paquete_examen = next(iter(loader_val))
-valores_reales_desescalados = escalador_y.inverse_transform(paquete_examen.Y).flatten().tolist()
 
-print("\n=== RESULTS WITH MOLECULAR WEIGHT INJECTED ===")
-for real, pred in zip(valores_reales_desescalados, predicciones_finales):
-    print(f"Real Target: {real:>6.2f} | Model Predicted: {pred:>6.2f}")
-print("==============================================")
