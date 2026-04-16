@@ -11,6 +11,9 @@ from chemprop.data import MoleculeDatapoint, MoleculeDataset, build_dataloader, 
 from chemprop.nn import BondMessagePassing, SumAggregation, RegressionFFN, UnscaleTransform
 from chemprop.models import MPNN
 
+import math
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
 
 #EXPLANATION OF PREVIOUS ERROS ABOUT THE "DIMER HEADER"
 csv_path = "data/METLIN_IMS_dimers_rmTM.csv" 
@@ -135,12 +138,6 @@ for i in range(len(todos_reales)):
 print("=============================================")
 
 
-
-
-
-
-
-
 '''
 This prints only 32 molecules, 1 batch
 print("\n=== FINAL PREDICTIONS ON REAL METLIN DATA ===")
@@ -150,7 +147,19 @@ print("=============================================")
 
 '''
 
+print(" EVALUATION METRICS  ")
 
+# With this we can compare this model against other versions
+
+mae = mean_absolute_error(todos_reales, todas_predicciones)
+mse = mean_squared_error(todos_reales, todas_predicciones)
+rmse = math.sqrt(mse)
+r2 = r2_score(todos_reales, todas_predicciones)
+
+print(f"Mean Absolute Error (MAE) : {mae:>6.2f} Å2  <-- (the Lower the better)")
+print(f"Root Mean Squared (RMSE)  : {rmse:>6.2f} Å2  <-- (the Lower the better, this penalizes big errors)")
+print(f"R-squared Score (R^2)      : {r2:>6.4f}     <-- (Closer to 1.0 the better)")
+print("==================================================")
 
 
 
