@@ -1,5 +1,5 @@
 '''
-10 EPOCHS, 500 MOLECULES, 100 RESULTS VISUALIZED (20% VALIDATION)
+30 EPOCHS, 500 MOLECULES, 100 RESULTS VISUALIZED (20% VALIDATION)
 
 '''
 
@@ -106,7 +106,7 @@ print(f"Model assembled. Predictor input dimension: {total_input_dim}")
 
 print("\n6. TRAINING (REAL PROTOTYPE) ")
 entrenador = pl.Trainer(
-    max_epochs=10, 
+    max_epochs=30, 
     enable_checkpointing=False, 
     logger=False,
     enable_progress_bar=True
@@ -160,6 +160,34 @@ print(f"Mean Absolute Error (MAE) : {mae:>6.2f} Å2  <-- (the Lower the better)"
 print(f"Root Mean Squared (RMSE)  : {rmse:>6.2f} Å2  <-- (the Lower the better, this penalizes big errors)")
 print(f"R-squared Score (R^2)      : {r2:>6.4f}     <-- (Closer to 1.0 the better)")
 print("==================================================")
+
+
+
+
+
+
+
+'''
+Comparing 10 epochs with 30 epochs
+For 10 epochs
+EVALUATION METRICS
+Mean Absolute Error (MAE) :  16.06 Å2  <-- (the Lower the better)
+Root Mean Squared (RMSE)  :  21.47 Å2  <-- (the Lower the better, this penalizes big errors)
+R-squared Score (R^2)      : 0.3924     <-- (Closer to 1.0 the better)
+
+
+For 30 epochs
+EVALUATION METRICS
+Mean Absolute Error (MAE) :   9.27 Å2  <-- (the Lower the better)
+Root Mean Squared (RMSE)  :  12.59 Å2  <-- (the Lower the better, this penalizes big errors)
+R-squared Score (R^2)      : 0.7910     <-- (Closer to 1.0 the better)
+
+
+'''
+
+
+
+
 
 
 
