@@ -1,5 +1,5 @@
 '''
-30 EPOCHS, 500 MOLECULES, 100 RESULTS VISUALIZED (20% VALIDATION)
+30 EPOCHS, 2000 MOLECULES, 400 RESULTS VISUALIZED (20% VALIDATION)
 
 '''
 
@@ -40,7 +40,7 @@ Then, the RESOLUTION: We must specifically target 'Dimer.1' for our categorical 
 print("1. LOADING AND CLEANING REAL DATA")
 csv_path = "data/METLIN_IMS_dimers_rmTM.csv" 
 #Loading 500 rows for example from METLIN
-df = pd.read_csv(csv_path, nrows=500)
+df = pd.read_csv(csv_path, nrows=2000)
 
 #Neural networks cannot process NaN values
 #If a molecule is missing its SMILES, Target, or Extra Features, we must drop the entire row.
@@ -83,7 +83,7 @@ dataset_val = MoleculeDataset([datos[int(i)] for i in indices_val[0]])
 escalador = dataset_train.normalize_targets()
 dataset_val.normalize_targets(escalador)
 
-#agrupa de 32 moleculas cada vez
+#grouping 32 molecules per batch each time
 loader_train = build_dataloader(dataset_train, batch_size=32, shuffle=True, num_workers=0) 
 loader_val = build_dataloader(dataset_val, batch_size=32, shuffle=False, num_workers=0)
 
@@ -182,6 +182,12 @@ Mean Absolute Error (MAE) :   9.27 Å2  <-- (the Lower the better)
 Root Mean Squared (RMSE)  :  12.59 Å2  <-- (the Lower the better, this penalizes big errors)
 R-squared Score (R^2)      : 0.7910     <-- (Closer to 1.0 the better)
 
+
+For 30 epochs and 2000 molecules
+EVALUATION METRICS
+Mean Absolute Error (MAE) :   4.36 Å2  <-- (the Lower the better)
+Root Mean Squared (RMSE)  :   5.92 Å2  <-- (the Lower the better, this penalizes big errors)
+R-squared Score (R^2)      : 0.9373     <-- (Closer to 1.0 the better)
 
 '''
 
