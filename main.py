@@ -1,79 +1,154 @@
+'''
+10 EPOCHS, 500 MOLECULES, 100 RESULTS VISUALIZED (20% VALIDATION)
+
+'''
+
 import pandas as pd
-import os
-
-print("LOADING REAL DATA")
-
-csv_path = "data/METLIN_IMS_dimers_rmTM.csv"
-
-if os.path.exists(csv_path):
-    print(f" File '{csv_path}' located successfully")
-    
-    #reading the first 500 
-    df = pd.read_csv(csv_path, nrows=500)
-    
-    print(f"\n DATASET SHAPE:")
-    print(f"Total molecules loaded (rows): {df.shape[0]}")
-    print(f"Total features (columns): {df.shape[1]}")
-    
-    print(" COLUMN INSPECTION ")
-    #printing columns to see the data
-    columns = df.columns.tolist()
-    for col in columns:
-        print(f" - {col}")
-    
-    print("\n FIRST 3 ROWS")
-    #displaying the first 3 rows to understand the format of the data.
-    pd.set_option('display.max_columns', None) #ensures Pandas prints all columns in the terminal
-    print(df.head(3).to_string())
-    
-else:
-    print(f" ERROR: Cannot find '{csv_path}'. Check if the file name is exactly correct.")
+import numpy as np
+import torch
+import lightning.pytorch as pl
+from chemprop.data import MoleculeDatapoint, MoleculeDataset, build_dataloader, make_split_indices
+from chemprop.nn import BondMessagePassing, SumAggregation, RegressionFFN, UnscaleTransform
+from chemprop.models import MPNN
 
 
+#EXPLANATION OF PREVIOUS ERROS ABOUT THE "DIMER HEADER"
+csv_path = "data/METLIN_IMS_dimers_rmTM.csv" 
+df_debug = pd.read_csv(csv_path, nrows=5)
 
+#Investigating the One Hot Encoding bug
+#The model created over 750 extra columns, crashing the system
+#To understand why: Lets compare the "Dimer" and "Dimer.1" columns for the first 3 rows
+
+#Displaying only the problematic columns to prove the error
+print(df_debug[['smiles', 'Dimer', 'Dimer.1']].head(3).to_string())
 '''
-It printed this structure:
-
-LOADING REAL DATA
- File 'data/METLIN_IMS_dimers_rmTM.csv' located successfully
-
-DATASET SHAPE:
-Total molecules loaded (rows): 500  
-Total features (columns): 21
-COLUMN INSPECTION:
- - Molecule Name
- - Molecular Formula
- - METLIN ID
- - Precursor Adduct
- - CCS1
- - CCS2
- - CCS3
- - CCS_AVG
- - % CV
- - m/z
- - Adduct
- - m/z.1
- - Dimer
- - Dimer.1
- - dimer line
- - CCS
- - m/z.2
- - pubChem
- - inchi
- - smiles
- - InChIKEY
-
- FIRST 3 ROWS
-Molecule Name                                                                                                           Molecular Formula   METLIN ID   Precursor Adduct    CCS1    CCS2    CCS3        CCS_AVG      % CV       m/z         Adduct       m/z.1            Dimer         Dimer.1         dimer line            CCS           m/z.2       pubChem         inchi                                                                                                                                                                                         smiles                                                    InChIKEY
-0  ({[(2,4,6-trimethylphenyl)carbamoyl]methyl}carbamoyl)methyl 1-[(tert-butylcarbamoyl)methyl]cyclopentane-1-carboxylate        C25H37N3O5    1133361    460.2806[M+H]      214.67  214.67  214.29       214.54     0.102262    460.2806     [M+H]       460.2806        245.447538       Monomer         NaN               135.0           50.0        16384698        InChI=1S/C25H37N3O5/c1-16-11-17(2)22(18(3)12-16)27-20(30)14-26-21(31)15-33-23(32)25(9-7-8-10-25)13-19(29)28-24(4,5)6/h11-12H,7-10,13-15H2,1-6H3,(H,26,31)(H,27,30)(H,28,29)      O=C(COC(=O)C1(CCCC1)CC(=O)NC(C)(C)C)NCC(=O)Nc1c(C)cc(cc1C)C         FEGOCYXICMRAQQ-UHFFFAOYSA-N
-
-
-There are some NaN values in some rows
+The 'Dimer' column contains intermediate numerical calculations (245.44)
+The 'Dimer.1' column contains the actual text labels ('Monomer' or 'Dimer')
+Because Pandas 'get_dummies' creates a new binary column for every unique value
+using the numerical 'Dimer' column created a massive, overfitted network
+Then, the RESOLUTION: We must specifically target 'Dimer.1' for our categorical extraction
 '''
 
 
 
 
+
+print("1. LOADING AND CLEANING REAL DATA")
+csv_path = "data/METLIN_IMS_dimers_rmTM.csv" 
+#Loading 500 rows for example from METLIN
+df = pd.read_csv(csv_path, nrows=500)
+
+#Neural networks cannot process NaN values
+#If a molecule is missing its SMILES, Target, or Extra Features, we must drop the entire row.
+#Because we need those parameters to predict the CCS
+df = df.dropna(subset=['smiles', 'CCS_AVG', 'Adduct', 'Dimer.1'])
+
+print(f"Rows remaining after cleaning missing values: {df.shape[0]}")
+
+print("\n2. ONE HOT ENCODING ")
+# Neural Networks only do numbers. They cannot read words "Monomer" or "[M+H]".
+# get_dummies converts text categories into binary columns (0.0 or 1.0)
+df_encoded = pd.get_dummies(df, columns=['Adduct', 'Dimer.1'], dtype=float)
+
+# Extracting the names of the newly created binary columns for x_d
+extra_feature_columns = [col for col in df_encoded.columns if col.startswith('Adduct_') or col.startswith('Dimer.1_')]
+print(f"Extra features created for x_d: {extra_feature_columns}")
+
+print("\n 3. BUILDING DATAPOINTS")
+datos = []
+for index, row in df_encoded.iterrows():
+    smi = row['smiles']
+    ccs_target = row['CCS_AVG']
+    
+    # Extract the binary values as a float32 array
+    x_d_values = row[extra_feature_columns].values.astype(np.float32)
+    
+    # x_d parameter is used to inject the features into the Chemprop pipeline
+    datos.append(MoleculeDatapoint.from_smi(smi, y=np.array([ccs_target]), x_d=x_d_values))
+
+print(f"Successfully packaged {len(datos)} MoleculeDatapoints.")
+
+print("\n 4. DATA SPLIT AND SCALING ")
+dataset_completo = MoleculeDataset(datos)
+# 80% of data to update weights, 20% to evaluate performance
+indices_train, indices_val, _ = make_split_indices(dataset_completo, sizes=(0.8, 0.2, 0.0), seed=42)
+
+dataset_train = MoleculeDataset([datos[int(i)] for i in indices_train[0]])
+dataset_val = MoleculeDataset([datos[int(i)] for i in indices_val[0]])
+
+escalador = dataset_train.normalize_targets()
+dataset_val.normalize_targets(escalador)
+
+#agrupa de 32 moleculas cada vez
+loader_train = build_dataloader(dataset_train, batch_size=32, shuffle=True, num_workers=0) 
+loader_val = build_dataloader(dataset_val, batch_size=32, shuffle=False, num_workers=0)
+
+print("\n 5. BUILDING THE PROTOTYPE MPNN ")
+mp = BondMessagePassing()
+agg = SumAggregation()
+
+#The graph neural network (mp) outputs a fixed vector of 300 neurons.
+#We must add the number of extra features (Adducts + Dimers) 
+#so the Predictor knows exactly how many input neurons to expect.
+total_input_dim = mp.output_dim + len(extra_feature_columns)
+
+ffn = RegressionFFN(
+    input_dim=total_input_dim, 
+    output_transform=UnscaleTransform.from_standard_scaler(escalador)
+)
+
+modelo_ccs = MPNN(mp, agg, ffn)
+print(f"Model assembled. Predictor input dimension: {total_input_dim}")
+
+print("\n6. TRAINING (REAL PROTOTYPE) ")
+entrenador = pl.Trainer(
+    max_epochs=10, 
+    enable_checkpointing=False, 
+    logger=False,
+    enable_progress_bar=True
+)
+
+entrenador.fit(modelo_ccs, loader_train, loader_val)
+
+
+print("\n--- 7. VALIDATION RESULTS ---")
+modelo_ccs.eval()
+# Empty lists to save the results that we will obtain
+todas_predicciones = []
+todos_reales = []
+
+for paquete in loader_val: # This for search in every batch (los 32 + 32 + 32 + 4) in this case because they are going to be 100 (20%of 500)
+    # Prediction on the actual batch
+    pred = modelo_ccs(paquete.bmg, X_d=paquete.X_d) #Becareful it is X_d=paquete.X_d
+    
+    #Desescalamos
+    real_desescalado = escalador.inverse_transform(paquete.Y)
+    
+    #Add to the lists
+    todas_predicciones.extend(pred.flatten().tolist())
+    todos_reales.extend(real_desescalado.flatten().tolist())
+
+print(f"\nFINAL PREDICTIONS")
+for i in range(len(todos_reales)): 
+    print(f"{i+1:>3}. Real CCS: {todos_reales[i]:>6.2f} | Predicted CCS: {todas_predicciones[i]:>6.2f}")
+print("=============================================")
+
+
+
+
+
+
+
+
+'''
+This prints only 32 molecules, 1 batch
+print("\n=== FINAL PREDICTIONS ON REAL METLIN DATA ===")
+for i in range(len(valores_reales_desescalados)):
+    print(f"Real CCS: {valores_reales_desescalados[i]:>6.2f} | Predicted CCS: {predicciones_planas[i]:>6.2f}")
+print("=============================================")
+
+'''
 
 
 
