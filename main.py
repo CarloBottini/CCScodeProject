@@ -26,8 +26,8 @@ startCronometer= time.time()
 print("1. LOADING AND CLEANING REAL DATA")
 csv_path= "data/METLIN_IMS_dimers_rmTM.csv" 
 #Loading 2000 rows for example from METLIN
-df= pd.read_csv(csv_path, nrows=2000) #first 2000 rows
-#df= pd.read_csv(csv_path) #All the dataset
+#df= pd.read_csv(csv_path, nrows=2000) #first 2000 rows
+df= pd.read_csv(csv_path) #All the dataset
 
 
 #Neural networks cannot process NaN values
@@ -74,23 +74,23 @@ print(f"Successfully packaged {valid_mols} MoleculeDatapoints. (Discarded: {inva
 
 
 print("\n 4. DATA SPLIT AND SCALING (80% TRAIN / 10%VAL / 10% TEST)")
-dataset_completo = MoleculeDataset(datos)
+dataset_completo= MoleculeDataset(datos)
 # 80% of data to update weights, 20% to evaluate performance
 indices_train, indices_val, indices_test = make_split_indices(dataset_completo, sizes=(0.8, 0.1, 0.1), seed=42)
 
-dataset_train = MoleculeDataset([datos[int(i)] for i in indices_train[0]])
-dataset_val = MoleculeDataset([datos[int(i)] for i in indices_val[0]])
-dataset_test = MoleculeDataset([datos[int(i)] for i in indices_test[0]])
+dataset_train= MoleculeDataset([datos[int(i)] for i in indices_train[0]])
+dataset_val= MoleculeDataset([datos[int(i)] for i in indices_val[0]])
+dataset_test= MoleculeDataset([datos[int(i)] for i in indices_test[0]])
 
-escalador = dataset_train.normalize_targets()
+escalador= dataset_train.normalize_targets()
 dataset_val.normalize_targets(escalador)
 dataset_test.normalize_targets(escalador) 
 
 #Grouping 32 molecules per batch each time
 #The batch size can be upgraded to 64 or 128
-loader_train = build_dataloader(dataset_train, batch_size=32, shuffle=True, num_workers=0) 
-loader_val = build_dataloader(dataset_val, batch_size=32, shuffle=False, num_workers=0)
-loader_test = build_dataloader(dataset_test, batch_size=32, shuffle=False, num_workers=0)
+loader_train= build_dataloader(dataset_train, batch_size=32, shuffle=True, num_workers=0) 
+loader_val= build_dataloader(dataset_val, batch_size=32, shuffle=False, num_workers=0)
+loader_test= build_dataloader(dataset_test, batch_size=32, shuffle=False, num_workers=0)
 
 
 print("\n 5. BUILDING THE PROTOTYPE MPNN ")
@@ -220,3 +220,34 @@ minutes= int((timeInSeconds %3600) //60)
 seconds= timeInSeconds%60
 
 print(f"\nTotal executiontime: {hours}h {minutes}m {seconds:.2f}s")
+
+
+
+
+
+
+'''
+2000 molecules, 50 epochs, 80%, 10%, 10%, 32 batch
+EVALUATION METRICS
+Tested on exactly 200 unseen molecules (10% Test Set):
+Mean Absolute Error (MAE) :   5.52 Å2  <-- (the Lower the better)
+Root Mean Squared (RMSE)  :   7.61 Å2  <-- (the Lower the better, this penalizes big errors)
+R-squared Score (R^2)      : 0.9059     <-- (Closer to 1.0 the better)
+
+Total executiontime: 0h 3m 38.25s
+'''
+
+'''
+All dataset, 50 epochs, 80%, 10%, 10%, 32 batch
+ EVALUATION METRICS
+Tested on exactly 6187 unseen molecules (10% Test Set):
+Mean Absolute Error (MAE) :   4.61 Å2  <-- (the Lower the better)
+Root Mean Squared (RMSE)  :   6.12 Å2  <-- (the Lower the better, this penalizes big errors)
+R-squared Score (R^2)      : 0.9138     <-- (Closer to 1.0 the better)
+
+Total executiontime: 1h 45m 54.24s
+I am not sure if this worked correctly, because it stopped at epoch 19/49
+
+'''
+
+
