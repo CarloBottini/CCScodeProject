@@ -19,6 +19,10 @@ from lightning.pytorch.loggers import CSVLogger
 import matplotlib.pyplot as plt
 import os
 
+import time #for the cronometer
+
+startCronometer= time.time()
+
 print("1. LOADING AND CLEANING REAL DATA")
 csv_path= "data/METLIN_IMS_dimers_rmTM.csv" 
 #Loading 2000 rows for example from METLIN
@@ -206,3 +210,13 @@ except Exception as e:
 
 print("==================================================")
 
+
+
+endCronometer=time.time()
+timeInSeconds= endCronometer- startCronometer
+
+hours= int(timeInSeconds //3600)
+minutes= int((timeInSeconds %3600) //60)
+seconds= timeInSeconds%60
+
+print(f"\nTotal executiontime: {hours}h {minutes}m {seconds:.2f}s")
