@@ -1,9 +1,15 @@
 
-#Ignorar datos y predicciones
+#Ignore the data and predictions
 *.csv
 data/
 
-#Ignorar modelos entrenados
+#Ignore trained models
 train_example/
 *.pt
 __pycache__/
+
+#Ignore generated plots
+*.png
+
+#Ignore PyTorch Lightning logs
+logs/

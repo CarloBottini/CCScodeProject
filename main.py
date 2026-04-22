@@ -1,7 +1,3 @@
-'''
-30 EPOCHS, 2000 MOLECULES, 400 RESULTS VISUALIZED (20% VALIDATION)
-
-'''
 
 import pandas as pd
 import numpy as np
@@ -17,11 +13,18 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 
+#Imports for the early stop and the visualization
+from lightning.pytorch.callbacks import EarlyStopping
+from lightning.pytorch.loggers import CSVLogger
+import matplotlib.pyplot as plt
+import os
 
 print("1. LOADING AND CLEANING REAL DATA")
-csv_path = "data/METLIN_IMS_dimers_rmTM.csv" 
+csv_path= "data/METLIN_IMS_dimers_rmTM.csv" 
 #Loading 2000 rows for example from METLIN
-df = pd.read_csv(csv_path, nrows=2000) #first 2000 rows
+df= pd.read_csv(csv_path, nrows=2000) #first 2000 rows
+#df= pd.read_csv(csv_path) #All the dataset
+
 
 #Neural networks cannot process NaN values
 #If a molecule is missing its SMILES, Target, or Extra Features, we must drop the entire row.
@@ -31,11 +34,11 @@ df = df.dropna(subset=['smiles', 'CCS_AVG', 'Adduct', 'Dimer.1'])
 print(f"Rows remaining after cleaning missing values: {df.shape[0]}")
 
 print("\n2. ONE HOT ENCODING ")
-# Neural Networks only do numbers. They cannot read words "Monomer" or "[M+H]".
-# get_dummies converts text categories into binary columns (0.0 or 1.0)
+#Neural Networks only do numbers. They cannot read words "Monomer" or "[M+H]".
+#get_dummies converts text categories into binary columns (0.0 or 1.0)
 df_encoded = pd.get_dummies(df, columns=['Adduct', 'Dimer.1'], dtype=float)
 
-# Extracting the names of the newly created binary columns for x_d
+#Extracting the names of the newly created binary columns for x_d
 extra_feature_columns = [col for col in df_encoded.columns if col.startswith('Adduct_') or col.startswith('Dimer.1_')]
 print(f"Extra features created for x_d: {extra_feature_columns}")
 
@@ -79,7 +82,8 @@ escalador = dataset_train.normalize_targets()
 dataset_val.normalize_targets(escalador)
 dataset_test.normalize_targets(escalador) 
 
-#grouping 32 molecules per batch each time
+#Grouping 32 molecules per batch each time
+#The batch size can be upgraded to 64 or 128
 loader_train = build_dataloader(dataset_train, batch_size=32, shuffle=True, num_workers=0) 
 loader_val = build_dataloader(dataset_val, batch_size=32, shuffle=False, num_workers=0)
 loader_test = build_dataloader(dataset_test, batch_size=32, shuffle=False, num_workers=0)
@@ -108,11 +112,21 @@ print(f"Model assembled. Predictor input dimension: {total_input_dim} (300 Graph
 
 
 
-print("\n 6. TRAINING (REAL PROTOTYPE) ")
+print("\n 6. TRAINING (REAL PROTOTYPE) WITH EARLY STOPPING ")
+EmergenceStop=EarlyStopping(
+    monitor="val_loss",
+    patience=5,
+    mode="min",
+    verbose=True
+)
+
+logger_csv= CSVLogger("logs", name="ccs_model")
+
 entrenador = pl.Trainer(
-    max_epochs=30, 
+    max_epochs=50, 
     enable_checkpointing=False, 
-    logger=False,
+    logger=logger_csv,
+    callbacks=[EmergenceStop],
     enable_progress_bar=True
 )
 
@@ -121,11 +135,11 @@ entrenador.fit(modelo_ccs, loader_train, loader_val)
 
 print("\n 7. TEST RESULTS")
 modelo_ccs.eval()
-# Empty lists to save the results that we will obtain
+#Empty lists to save the results that we will obtain
 todas_predicciones = []
 todos_reales = []
 
-# Using loader_test instead of loader_val
+#Using loader_test instead of loader_val
 with torch.no_grad():
     for paquete in loader_test: 
         pred = modelo_ccs(paquete.bmg, X_d=paquete.X_d) 
@@ -137,30 +151,58 @@ with torch.no_grad():
 
 
 
-print(f"\nFINAL PREDICTIONS")
-for i in range(len(todos_reales)): 
+print(f"\nFINAL PREDICTIONS (showing only the first 30)")
+#Only 30, not all
+limit = min(30, len(todos_reales))
+
+for i in range(limit): 
     print(f"{i+1:>3}. Real CCS: {todos_reales[i]:>6.2f} | Predicted CCS: {todas_predicciones[i]:>6.2f}")
 print("=============================================")
 
 
+print("\n 8. EVALUATION METRICS")
 
-print("\n 8. EVALUATION METRICS  ")
-
-mae = mean_absolute_error(todos_reales, todas_predicciones)
-mse = mean_squared_error(todos_reales, todas_predicciones)
-rmse = math.sqrt(mse)
-r2 = r2_score(todos_reales, todas_predicciones)
+mae= mean_absolute_error(todos_reales, todas_predicciones)
+mse= mean_squared_error(todos_reales, todas_predicciones)
+rmse= math.sqrt(mse)
+r2= r2_score(todos_reales, todas_predicciones)
 
 print(f"Tested on exactly {len(todos_reales)} unseen molecules (10% Test Set):")
 print(f"Mean Absolute Error (MAE) : {mae:>6.2f} Å2  <-- (the Lower the better)")
 print(f"Root Mean Squared (RMSE)  : {rmse:>6.2f} Å2  <-- (the Lower the better, this penalizes big errors)")
 print(f"R-squared Score (R^2)      : {r2:>6.4f}     <-- (Closer to 1.0 the better)")
+
+
+
+print("\n 9. LOSS PLOT")
+try:
+    version_dir= logger_csv.log_dir
+    metrics_path= os.path.join(version_dir, "metrics.csv")
+
+    metrics_df= pd.read_csv(metrics_path)
+    
+    #Separate Train and Val losses.
+    train_loss= metrics_df[['epoch', 'train_loss_epoch']].dropna()
+    val_loss= metrics_df[['epoch', 'val_loss']].dropna()
+
+    #Plot
+    plt.figure(figsize=(12, 8))
+    plt.plot(train_loss['epoch'], train_loss['train_loss_epoch'], label='Train Loss', color='blue', marker='o')
+    plt.plot(val_loss['epoch'], val_loss['val_loss'], label='Validation Loss', color='red', marker='x')
+    
+    plt.title('Model Training History (Learning Curves)')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss (Normalized MAE)')
+    plt.legend()
+    plt.grid(True)
+    
+    #Saving the plot
+    plot_filename= "learning_curve.png"
+    plt.savefig(plot_filename)
+    print(f"Learning curve saved as '{plot_filename}' in the project folder.")
+    
+except Exception as e:
+    print(f"Plot not generated. Error: {e}")
+
 print("==================================================")
-
-
-
-
-
-
-
 
