@@ -110,7 +110,7 @@ dataset_test.normalize_targets(target_scaler)
 x_d_scaler = dataset_train.normalize_inputs("X_d")
 dataset_val.normalize_inputs("X_d", x_d_scaler)
 dataset_test.normalize_inputs("X_d", x_d_scaler)
-#X_d_transform = ScaleTransform.from_standard_scaler(X_d_scaler) #not going to use this
+#X_d_transform = ScaleTransform.from_standard_scaler(x_d_scaler) #not going to use this
 
 #Grouping 32 molecules per batch each time
 #The batch size can be upgraded to 64 or 128
