@@ -16,7 +16,7 @@ import warnings
 import time
 
 #Disable minor warnings to keep the Optuna console clean
-#warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore")
 
 start_time=time.time()
 pl.seed_everything(42, workers=True)

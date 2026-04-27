@@ -20,5 +20,3 @@ optuna_temp/
 logs/
 *.ckpt
 
-#Ignore Python cache
-#__pycache__/
