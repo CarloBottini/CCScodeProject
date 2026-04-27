@@ -31,7 +31,7 @@ pl.seed_everything(42, workers=True) #For reproducibility, ensure the same rando
 print("1. LOADING AND CLEANING REAL DATA")
 csv_path= "data/METLIN_IMS_dimers_rmTM.csv" 
 #Loading 1000 rows for example from METLIN
-df= pd.read_csv(csv_path, nrows=1000) #first 1000 rows
+df= pd.read_csv(csv_path, nrows=500) #first 1000 rows
 #df= pd.read_csv(csv_path) #All the dataset
 
 
@@ -156,7 +156,7 @@ EmergenceStop=EarlyStopping(
 logger_csv= CSVLogger("logs", name="ccs_model")
 
 trainer = pl.Trainer(
-    max_epochs=30, 
+    max_epochs=20, 
     enable_checkpointing=False, 
     logger=logger_csv,
     callbacks=[EmergenceStop],

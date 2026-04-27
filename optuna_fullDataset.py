@@ -112,9 +112,9 @@ dataset_val.normalize_inputs("X_d", x_d_scaler)
 #Grouping 32 molecules per batch each time
 #The batch size can be upgraded to 64 or 128
 num_dataloader_workers = 8
-loader_train= build_dataloader(dataset_train, batch_size=32, shuffle=True, num_workers=num_dataloader_workers) 
-loader_val= build_dataloader(dataset_val, batch_size=32, shuffle=False, num_workers=num_dataloader_workers)
-#loader_test= build_dataloader(dataset_test, batch_size=32, shuffle=False, num_workers=num_dataloader_workers)
+loader_train= build_dataloader(dataset_train, batch_size=128, shuffle=True, num_workers=num_dataloader_workers) 
+loader_val= build_dataloader(dataset_val, batch_size=128, shuffle=False, num_workers=num_dataloader_workers)
+#loader_test= build_dataloader(dataset_test, batch_size=128, shuffle=False, num_workers=num_dataloader_workers)
 
 
 num_extra_features = len(extra_feature_columns) + 1
