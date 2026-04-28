@@ -2,6 +2,8 @@
 #Ignore the data and predictions
 *.csv
 data/
+#This time do not ignore this specific file inside data
+!data/METLIN_IMS_dimers_rmTM.csv
 
 #Ignore trained models
 train_example/
