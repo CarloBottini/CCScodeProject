@@ -1,23 +1,25 @@
-
-#Ignore the data and predictions
+# Ignore all CSVs and PNGs by default
 *.csv
-#data/
-#This time do not ignore this specific file inside data
-!data/METLIN_IMS_dimers_rmTM.csv
-
-#Ignore trained models
-train_example/
-*.pt
-__pycache__/
-
-#Ignore generated plots
 *.png
 
-#Ignore PyTorch Lightning logs
-logs/
+# But commit the source dataset
+!data/METLIN_IMS_dimers_rmTM.csv
 
-#Ignore PyTorch Lightning checkpoints and Optuna temporary weights
-optuna_temp/
-logs/
+# Commit the Optuna result CSVs (so the tutor can review them in the repo)
+!CSVresults/
+!CSVresults/*.csv
+
+# Commit the analysis plots and tables
+!Analyze_Results/
+!Analyze_Results/**/*.png
+!Analyze_Results/**/*.csv
+
+# Trained models and temporary files
+train_example/
+*.pt
 *.ckpt
+__pycache__/
 
+# PyTorch Lightning logs and Optuna temporary weights
+logs/
+optuna_temp/
