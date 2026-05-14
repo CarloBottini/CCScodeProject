@@ -8,6 +8,9 @@
 # Commit the Optuna result CSVs (so the tutor can review them in the repo)
 !CSVresults/
 !CSVresults/*.csv
+# Commit the baseline (ECFP4 + FFN) result CSVs
+!baseline_results/
+!baseline_results/*.csv
 
 # Commit the analysis plots and tables
 !Analyze_Results/

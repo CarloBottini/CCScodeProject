@@ -1,0 +1,2 @@
+model,test_samples,mae,rmse,r2,fp_radius,fp_nbits,hidden_dim,n_layers,dropout,seed
+ECFP4 + FFN,6185,4.12107515335083,5.660075711663898,0.9240965843200684,2,2048,512,3,0.2,42

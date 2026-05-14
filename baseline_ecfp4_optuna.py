@@ -306,7 +306,7 @@ pd.DataFrame([{
     "test_samples": best_trial.user_attrs.get("test_samples", 0),
     "mae": best_trial.user_attrs.get("test_mae", float("nan")),
     "rmse": best_trial.user_attrs.get("test_rmse", float("nan")),
-    "r^2": best_trial.user_attrs.get("test_r^2", float("nan")),
+    "r2": best_trial.user_attrs.get("test_r2", float("nan")),
     **best_trial.params,
     "seed": SEED,
 }]).to_csv("baseline_results/baseline_ecfp4_optuna_best.csv", index=False)
@@ -331,9 +331,6 @@ Samples : 6185
 MAE     :   4.08 Å^2
 RMSE    :   5.67 Å^2
 R^2      : 0.9239
-
 Total execution time: 15.55 minutes.
-
-
 '''
 
