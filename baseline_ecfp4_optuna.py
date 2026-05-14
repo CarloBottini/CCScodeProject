@@ -315,7 +315,24 @@ print(f"\nTotal execution time: {(time.time() - start_time) / 60:.2f} minutes.")
 
 
 '''
+BEST TRIAL: #4
+Best validation loss: 0.0710
+Optimal hyperparameters:
+  - fp_radius: 2
+  - fp_nbits: 2048
+  - hidden_dim: 512
+  - n_layers: 2
+  - dropout: 0.15547091587579281
+  - lr: 0.00028907721743726757
+  - batch_size: 64
 
+TEST SET RESULTS FOR THE BEST TRIAL (Å^2 units):
+Samples : 6185
+MAE     :   4.08 Å^2
+RMSE    :   5.67 Å^2
+R^2      : 0.9239
+
+Total execution time: 15.55 minutes.
 
 
 '''
